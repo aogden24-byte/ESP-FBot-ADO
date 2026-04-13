@@ -4,6 +4,11 @@ from esphome.components import ble_client
 from esphome.const import CONF_ID
 
 AUTO_LOAD = ["ble_client", "sensor", "binary_sensor", "switch", "number"]
+DEPENDENCIES = ["ble_client"]
+
+# THE FIX: Tells compiler to allow both Fossi and Aferiy units
+MULTI_CONF = True 
+
 CONF_FBOT_ID = "fbot_id"
 
 fbot_ns = cg.esphome_ns.namespace("fbot_dev")
