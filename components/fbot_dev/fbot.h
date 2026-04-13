@@ -8,9 +8,6 @@
 #include "esphome/components/switch/switch.h"
 #include "esphome/components/number/number.h"
 
-#ifdef USE_ESP32
-#include <esp_gattc_api.h>
-
 namespace esphome { namespace fbot_dev {
 
 class Fbot : public esphome::ble_client::BLEClientNode, public Component {
@@ -18,7 +15,8 @@ class Fbot : public esphome::ble_client::BLEClientNode, public Component {
   void setup() override; 
   void loop() override; 
   void dump_config() override;
-  float get_setup_priority() const override { return 45.0; }
+  // Removed hardcoded setup priority to let ESPHome boot sequence run safely
+  
   void gattc_event_handler(esp_gattc_cb_event_t event, esp_gatt_if_t gattc_if, esp_ble_gattc_cb_param_t *param) override;
   
   bool is_connected() const { return connected_; }
@@ -93,4 +91,3 @@ template<typename... Ts> class SetDcChargeCurrentAction : public Action<Ts...>, 
 };
 
 } }
-#endif
