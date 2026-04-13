@@ -1,155 +1,41 @@
 #include "fbot.h"
 #include "esphome/core/log.h"
-#include "esphome/core/helpers.h"
 
 #ifdef USE_ESP32
+namespace esphome { namespace fbot_dev {
 
-namespace esphome {
-namespace fbot_dev {
+static const char *TAG = "fbot_dev";
 
-static const char *const TAG = "fbot_dev";
-
-void Fbot::setup() {
-  ESP_LOGCONFIG(TAG, "Setting up Fbot...");
-  this->write_handle_ = 0;
-  this->notify_handle_ = 0;
-  this->connected_ = false;
-  this->characteristics_discovered_ = false;
-  this->settings_received_ = false;
-  this->consecutive_poll_failures_ = 0;
-  this->last_successful_poll_ = 0;
-  this->last_settings_request_time_ = 0;
-  
-  if (this->connected_binary_sensor_ != nullptr) {
-    this->connected_binary_sensor_->publish_state(false);
-  }
-}
+void Fbot::setup() { this->update_connected_state(false); }
 
 void Fbot::loop() {
-  // RESTORED: This sends the actual polling requests to get your data back
   if (this->connected_ && this->characteristics_discovered_) {
     uint32_t now = millis();
-    
-    this->check_poll_timeout();
-    
     if (now - this->last_poll_time_ >= this->polling_interval_) {
       this->send_read_request();
       this->last_poll_time_ = now;
     }
-    
-    if (now - this->last_settings_request_time_ >= this->settings_polling_interval_) {
-      this->send_settings_request();
-      this->last_settings_request_time_ = now;
-    }
   }
 }
 
-void Fbot::dump_config() {
-  ESP_LOGCONFIG(TAG, "Fbot Battery (ADO Dev):");
-  ESP_LOGCONFIG(TAG, "  Polling interval: %ums", this->polling_interval_);
-  LOG_SENSOR("  ", "Battery Percent", this->battery_percent_sensor_);
-  LOG_SENSOR("  ", "DC Input Power", this->dc_input_power_sensor_);
-  LOG_SENSOR("  ", "Total Power", this->total_power_sensor_);
-  LOG_BINARY_SENSOR("  ", "Connected", this->connected_binary_sensor_);
-}
-
-void Fbot::gattc_event_handler(esp_gattc_cb_event_t event, esp_gatt_if_t gattc_if,
-                                  esp_ble_gattc_cb_param_t *param) {
-  switch (event) {
-    case ESP_GATTC_OPEN_EVT: {
-      if (param->open.status == ESP_GATT_OK) {
-        ESP_LOGI(TAG, "Connected to Fbot unit");
-        this->connected_ = true;
-        this->update_connected_state(true);
-      }
-      break;
-    }
-    
-    case ESP_GATTC_DISCONNECT_EVT: {
-      ESP_LOGW(TAG, "Disconnected from Fbot");
-      this->connected_ = false;
-      this->characteristics_discovered_ = false;
-      this->update_connected_state(false);
-      break;
-    }
-    
-    case ESP_GATTC_SEARCH_CMPL_EVT: {
-      auto *write_chr = this->parent()->get_characteristic(
-          esp32_ble_tracker::ESPBTUUID::from_raw(SERVICE_UUID),
-          esp32_ble_tracker::ESPBTUUID::from_raw(WRITE_CHAR_UUID));
-      if (write_chr != nullptr) {
-        this->write_handle_ = write_chr->handle;
-      }
-      
-      auto *notify_chr = this->parent()->get_characteristic(
-          esp32_ble_tracker::ESPBTUUID::from_raw(SERVICE_UUID),
-          esp32_ble_tracker::ESPBTUUID::from_raw(NOTIFY_CHAR_UUID));
-      if (notify_chr != nullptr) {
-        this->notify_handle_ = notify_chr->handle;
-        esp_ble_gattc_register_for_notify(gattc_if, this->parent()->get_remote_bda(), this->notify_handle_);
-      }
-      
-      this->characteristics_discovered_ = true;
-      this->node_state = esp32_ble_tracker::ClientState::ESTABLISHED;
-      break;
-    }
-
-    case ESP_GATTC_NOTIFY_EVT: {
-      if (param->notify.handle == this->notify_handle_) {
-        this->parse_notification(param->notify.value, param->notify.value_len);
-      }
-      break;
-    }
-
-    default:
-      break;
-  }
-}
-
-// --- NEW SLIDER LOGIC ---
 void Fbot::set_dc_charge_current(uint16_t current) {
   ESP_LOGI(TAG, "Commanding DC Charge Limit: %u Amps", current);
-  // REG_DC_CHARGE_CURRENT (40) is the register for current limit
   this->send_control_command(REG_DC_CHARGE_CURRENT, current);
 }
 
 void Fbot::send_control_command(uint16_t reg, uint16_t value) {
   if (!this->connected_) return;
-  
-  uint8_t command[8];
-  this->generate_command_bytes(0x11, reg, value, command);
-  
-  esp_ble_gattc_write_char(this->parent()->get_gattc_if(), this->parent()->get_conn_id(),
-                          this->write_handle_, sizeof(command), command,
-                          ESP_GATT_WRITE_TYPE_NO_RSP, ESP_GATT_AUTH_REQ_NONE);
+  uint8_t cmd[8];
+  this->generate_command_bytes(0x11, reg, value, cmd);
+  esp_ble_gattc_write_char(this->parent()->get_gattc_if(), this->parent()->get_conn_id(), this->write_handle_, 8, cmd, ESP_GATT_WRITE_TYPE_NO_RSP, ESP_GATT_AUTH_REQ_NONE);
 }
 
 void Fbot::send_read_request() {
-  if (!this->connected_) return;
   uint8_t payload[6] = {0x11, 0x04, 0x00, 0x00, 0x00, 0x50};
   uint16_t crc = this->calculate_checksum(payload, 6);
-  uint8_t command[8];
-  memcpy(command, payload, 6);
-  command[6] = (crc >> 8) & 0xFF;
-  command[7] = crc & 0xFF;
-  
-  esp_ble_gattc_write_char(this->parent()->get_gattc_if(), this->parent()->get_conn_id(),
-                          this->write_handle_, sizeof(command), command,
-                          ESP_GATT_WRITE_TYPE_NO_RSP, ESP_GATT_AUTH_REQ_NONE);
-}
-
-void Fbot::send_settings_request() {
-  if (!this->connected_) return;
-  uint8_t payload[6] = {0x11, 0x03, 0x00, 0x00, 0x00, 0x50};
-  uint16_t crc = this->calculate_checksum(payload, 6);
-  uint8_t command[8];
-  memcpy(command, payload, 6);
-  command[6] = (crc >> 8) & 0xFF;
-  command[7] = crc & 0xFF;
-  
-  esp_ble_gattc_write_char(this->parent()->get_gattc_if(), this->parent()->get_conn_id(),
-                          this->write_handle_, sizeof(command), command,
-                          ESP_GATT_WRITE_TYPE_NO_RSP, ESP_GATT_AUTH_REQ_NONE);
+  uint8_t cmd[8]; memcpy(cmd, payload, 6);
+  cmd[6] = (crc >> 8) & 0xFF; cmd[7] = crc & 0xFF;
+  esp_ble_gattc_write_char(this->parent()->get_gattc_if(), this->parent()->get_conn_id(), this->write_handle_, 8, cmd, ESP_GATT_WRITE_TYPE_NO_RSP, ESP_GATT_AUTH_REQ_NONE);
 }
 
 uint16_t Fbot::calculate_checksum(const uint8_t *data, size_t len) {
@@ -164,21 +50,29 @@ uint16_t Fbot::calculate_checksum(const uint8_t *data, size_t len) {
   return crc;
 }
 
-void Fbot::generate_command_bytes(uint8_t address, uint16_t reg, uint16_t value, uint8_t *output) {
-  output[0] = address;
-  output[1] = 0x06;
-  output[2] = (reg >> 8) & 0xFF;
-  output[3] = reg & 0xFF;
-  output[4] = (value >> 8) & 0xFF;
-  output[5] = value & 0xFF;
-  uint16_t crc = this->calculate_checksum(output, 6);
-  output[6] = (crc >> 8) & 0xFF;
-  output[7] = crc & 0xFF;
+void Fbot::generate_command_bytes(uint8_t addr, uint16_t reg, uint16_t val, uint8_t *out) {
+  out[0] = addr; out[1] = 0x06; out[2] = (reg >> 8); out[3] = reg; out[4] = (val >> 8); out[5] = val;
+  uint16_t crc = calculate_checksum(out, 6);
+  out[6] = (crc >> 8); out[7] = crc;
 }
 
-// ... (Rest of your parse_notification and get_register logic follows here) ...
+void Fbot::update_connected_state(bool state) {
+  this->connected_ = state;
+  if (this->connected_binary_sensor_) this->connected_binary_sensor_->publish_state(state);
+}
 
-} // namespace fbot_dev
-} // namespace esphome
+void Fbot::gattc_event_handler(esp_gattc_cb_event_t event, esp_gatt_if_t gattc_if, esp_ble_gattc_cb_param_t *param) {
+  if (event == ESP_GATTC_OPEN_EVT && param->open.status == ESP_GATT_OK) {
+    this->connected_ = true; this->update_connected_state(true);
+  } else if (event == ESP_GATTC_SEARCH_CMPL_EVT) {
+    auto *w = this->parent()->get_characteristic(esp32_ble_tracker::ESPBTUUID::from_raw(SERVICE_UUID), esp32_ble_tracker::ESPBTUUID::from_raw(WRITE_CHAR_UUID));
+    if (w) this->write_handle_ = w->handle;
+    this->characteristics_discovered_ = true;
+    this->node_state = esp32_ble_tracker::ClientState::ESTABLISHED;
+  }
+}
 
+void Fbot::dump_config() { ESP_LOGCONFIG(TAG, "Fbot Unit (ADO Dev)"); }
+
+} }
 #endif
