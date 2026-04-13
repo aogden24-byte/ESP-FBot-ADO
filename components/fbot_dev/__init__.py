@@ -4,23 +4,27 @@ from esphome import automation
 from esphome.components import ble_client
 from esphome.const import CONF_ID
 
+# Basic Component Setup
 AUTO_LOAD = ["ble_client"]
 DEPENDENCIES = ["ble_client"]
 MULTI_CONF = True
 
+# Constants
 CONF_FBOT_ID = "fbot_id"
 CONF_POLLING_INTERVAL = "polling_interval"
 CONF_SETTINGS_POLLING_INTERVAL = "settings_polling_interval"
 CONF_CURRENT = "current"
 
+# Namespace and Class Definitions
 fbot_ns = cg.esphome_ns.namespace("fbot_dev")
 Fbot = fbot_ns.class_(
     "Fbot", cg.Component, ble_client.BLEClientNode
 )
 
-# This is the reference Python was looking for
+# Action Class Definition
 SetDcChargeCurrentAction = fbot_ns.class_("SetDcChargeCurrentAction", automation.Action)
 
+# Main Configuration Schema
 CONFIG_SCHEMA = cv.All(
     cv.Schema(
         {
@@ -41,14 +45,14 @@ async def to_code(config):
     cg.add(var.set_polling_interval(config[CONF_POLLING_INTERVAL]))
     cg.add(var.set_settings_polling_interval(config[CONF_SETTINGS_POLLING_INTERVAL]))
 
-# Fixed: Now contains all 3 required arguments (Name, Class, Schema)
+# --- Action Registration (Fixed uint16_t and SetDcChargeCurrentAction) ---
 @automation.register_action(
     "fbot_dev.set_dc_charge_current",
     SetDcChargeCurrentAction,
     automation.maybe_simple_id(
         {
             cv.GenerateID(): cv.use_id(Fbot),
-            cv.Required(CONF_CURRENT): cv.templatable(cv.uint16),
+            cv.Required(CONF_CURRENT): cv.templatable(cv.uint16_t),
         }
     ),
 )
