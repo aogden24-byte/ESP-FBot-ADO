@@ -21,7 +21,7 @@ void Fbot::loop() {
 }
 
 void Fbot::dump_config() { 
-  ESP_LOGCONFIG(TAG, "Fbot Unit (ADO Final)"); 
+  ESP_LOGCONFIG(TAG, "Fbot Unit (Runtime Hardened)"); 
 }
 
 void Fbot::control_usb(bool state) { this->send_control_command(24, state ? 1 : 0); }
@@ -38,14 +38,17 @@ void Fbot::set_dc_charge_current(uint16_t current) {
   this->send_control_command(40, current);
 }
 
+// CRASH FIX: Guard against sending commands before BLE handles exist
 void Fbot::send_control_command(uint16_t reg, uint16_t value) {
-  if (!this->connected_) return;
+  if (!this->connected_ || !this->characteristics_discovered_ || this->write_handle_ == 0) return;
   uint8_t cmd[8]; 
   this->generate_command_bytes(0x11, reg, value, cmd);
   esp_ble_gattc_write_char(this->parent()->get_gattc_if(), this->parent()->get_conn_id(), this->write_handle_, 8, cmd, ESP_GATT_WRITE_TYPE_NO_RSP, ESP_GATT_AUTH_REQ_NONE);
 }
 
+// CRASH FIX: Guard against reading before BLE handles exist
 void Fbot::send_read_request() {
+  if (!this->connected_ || !this->characteristics_discovered_ || this->write_handle_ == 0) return;
   uint8_t payload[6] = {0x11, 0x04, 0x00, 0x00, 0x00, 0x50};
   uint16_t crc = this->calculate_checksum(payload, 6);
   uint8_t cmd[8]; 
@@ -91,14 +94,16 @@ void Fbot::gattc_event_handler(esp_gattc_cb_event_t event, esp_gatt_if_t gattc_i
   }
   else if (event == ESP_GATTC_SEARCH_CMPL_EVT) {
     auto *w = this->parent()->get_characteristic(esp32_ble_tracker::ESPBTUUID::from_raw("0000a002-0000-1000-8000-00805f9b34fb"), esp32_ble_tracker::ESPBTUUID::from_raw("0000c304-0000-1000-8000-00805f9b34fb"));
-    if (w) this->write_handle_ = w->handle;
     auto *n = this->parent()->get_characteristic(esp32_ble_tracker::ESPBTUUID::from_raw("0000a002-0000-1000-8000-00805f9b34fb"), esp32_ble_tracker::ESPBTUUID::from_raw("0000c305-0000-1000-8000-00805f9b34fb"));
-    if (n) {
+    
+    // CRASH FIX: Ensure both pointers exist before assigning handles to prevent null panic
+    if (w && n) {
+      this->write_handle_ = w->handle;
       this->notify_handle_ = n->handle;
       esp_ble_gattc_register_for_notify(gattc_if, this->parent()->get_remote_bda(), this->notify_handle_);
+      this->characteristics_discovered_ = true;
+      this->node_state = esp32_ble_tracker::ClientState::ESTABLISHED;
     }
-    this->characteristics_discovered_ = true;
-    this->node_state = esp32_ble_tracker::ClientState::ESTABLISHED;
   }
   else if (event == ESP_GATTC_NOTIFY_EVT && param->notify.handle == this->notify_handle_) {
     this->parse_notification(param->notify.value, param->notify.value_len);
@@ -108,7 +113,12 @@ void Fbot::gattc_event_handler(esp_gattc_cb_event_t event, esp_gatt_if_t gattc_i
 void Fbot::parse_notification(const uint8_t *data, uint16_t length) {
   if (length < 6 || data[0] != 0x11 || data[1] != 0x04) return;
   uint16_t offset = 6;
-  auto get_reg = [&](uint16_t reg) { return (uint16_t)(data[offset + (reg*2)] << 8 | data[offset + (reg*2) + 1]); };
+  
+  // CRASH FIX: Hard boundary check. Stop the ESP32 from reading out-of-bounds memory.
+  auto get_reg = [&](uint16_t reg) -> uint16_t {
+    if (offset + (reg * 2) + 1 >= length) return 0; 
+    return (uint16_t)(data[offset + (reg*2)] << 8 | data[offset + (reg*2) + 1]);
+  };
   
   if (this->battery_percent_sensor_) this->battery_percent_sensor_->publish_state(get_reg(56) / 10.0f);
   if (this->battery_percent_s1_sensor_) this->battery_percent_s1_sensor_->publish_state(get_reg(53) / 10.0f);
