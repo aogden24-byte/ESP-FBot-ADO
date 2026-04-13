@@ -4,11 +4,11 @@ from esphome import automation
 from esphome.components import ble_client
 from esphome.const import CONF_ID
 
-AUTO_LOAD = ["ble_client"]
+AUTO_LOAD = ["ble_client", "sensor", "binary_sensor", "switch", "number", "select"]
 DEPENDENCIES = ["ble_client"]
 MULTI_CONF = True
 
-# Constants required for component registration
+# All required constants for sub-component files
 CONF_FBOT_ID = "fbot_id"
 CONF_POLLING_INTERVAL = "polling_interval"
 CONF_SETTINGS_POLLING_INTERVAL = "settings_polling_interval"
