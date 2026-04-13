@@ -1,6 +1,6 @@
 import esphome.codegen as cg
 import esphome.config_validation as cv
-from esphome import automation  # <--- Added this
+from esphome import automation
 from esphome.components import ble_client
 from esphome.const import CONF_ID
 
@@ -11,14 +11,14 @@ MULTI_CONF = True
 CONF_FBOT_ID = "fbot_id"
 CONF_POLLING_INTERVAL = "polling_interval"
 CONF_SETTINGS_POLLING_INTERVAL = "settings_polling_interval"
-CONF_CURRENT = "current"  # <--- Added this
+CONF_CURRENT = "current"
 
 fbot_ns = cg.esphome_ns.namespace("fbot_dev")
 Fbot = fbot_ns.class_(
     "Fbot", cg.Component, ble_client.BLEClientNode
 )
 
-# This declares the C++ Action class so Python knows how to build it
+# This is the reference Python was looking for
 SetDcChargeCurrentAction = fbot_ns.class_("SetDcChargeCurrentAction", automation.Action)
 
 CONFIG_SCHEMA = cv.All(
@@ -41,13 +41,14 @@ async def to_code(config):
     cg.add(var.set_polling_interval(config[CONF_POLLING_INTERVAL]))
     cg.add(var.set_settings_polling_interval(config[CONF_SETTINGS_POLLING_INTERVAL]))
 
-# --- THIS IS THE MISSING LINK ---
+# Fixed: Now contains all 3 required arguments (Name, Class, Schema)
 @automation.register_action(
     "fbot_dev.set_dc_charge_current",
+    SetDcChargeCurrentAction,
     automation.maybe_simple_id(
         {
             cv.GenerateID(): cv.use_id(Fbot),
-            cv.Required(CONF_CURRENT): cv.templatable(cv.uint16_t),
+            cv.Required(CONF_CURRENT): cv.templatable(cv.uint16),
         }
     ),
 )
