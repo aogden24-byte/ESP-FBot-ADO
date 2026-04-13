@@ -1,5 +1,6 @@
 import esphome.codegen as cg
 import esphome.config_validation as cv
+from esphome import automation  # <--- Added this
 from esphome.components import ble_client
 from esphome.const import CONF_ID
 
@@ -10,11 +11,15 @@ MULTI_CONF = True
 CONF_FBOT_ID = "fbot_id"
 CONF_POLLING_INTERVAL = "polling_interval"
 CONF_SETTINGS_POLLING_INTERVAL = "settings_polling_interval"
+CONF_CURRENT = "current"  # <--- Added this
 
 fbot_ns = cg.esphome_ns.namespace("fbot_dev")
 Fbot = fbot_ns.class_(
     "Fbot", cg.Component, ble_client.BLEClientNode
 )
+
+# This declares the C++ Action class so Python knows how to build it
+SetDcChargeCurrentAction = fbot_ns.class_("SetDcChargeCurrentAction", automation.Action)
 
 CONFIG_SCHEMA = cv.All(
     cv.Schema(
@@ -35,3 +40,20 @@ async def to_code(config):
     
     cg.add(var.set_polling_interval(config[CONF_POLLING_INTERVAL]))
     cg.add(var.set_settings_polling_interval(config[CONF_SETTINGS_POLLING_INTERVAL]))
+
+# --- THIS IS THE MISSING LINK ---
+@automation.register_action(
+    "fbot_dev.set_dc_charge_current",
+    automation.maybe_simple_id(
+        {
+            cv.GenerateID(): cv.use_id(Fbot),
+            cv.Required(CONF_CURRENT): cv.templatable(cv.uint16_t),
+        }
+    ),
+)
+async def fbot_set_dc_charge_current_to_code(config, action_id, template_arg, args):
+    var = cg.new_Pvariable(action_id, template_arg)
+    await cg.register_parented(var, config[CONF_ID])
+    template_ = await cg.templatable(config[CONF_CURRENT], args, cg.uint16)
+    cg.add(var.set_current(template_))
+    return var
