@@ -1,6 +1,5 @@
 #pragma once
 #include "esphome/core/component.h"
-#include "esphome/core/automation.h"
 #include "esphome/components/ble_client/ble_client.h"
 #include "esphome/components/esp32_ble_tracker/esp32_ble_tracker.h"
 #include "esphome/components/sensor/sensor.h"
@@ -15,8 +14,6 @@ class Fbot : public esphome::ble_client::BLEClientNode, public Component {
   void setup() override; 
   void loop() override; 
   void dump_config() override;
-  // Removed hardcoded setup priority to let ESPHome boot sequence run safely
-  
   void gattc_event_handler(esp_gattc_cb_event_t event, esp_gatt_if_t gattc_if, esp_ble_gattc_cb_param_t *param) override;
   
   bool is_connected() const { return connected_; }
@@ -31,6 +28,8 @@ class Fbot : public esphome::ble_client::BLEClientNode, public Component {
   void control_key_sound(bool state);
   void set_threshold_charge(float percent); 
   void set_threshold_discharge(float percent); 
+
+  // DIRECT LAMBDA METHOD
   void set_dc_charge_current(uint16_t current);
 
   void set_battery_percent_sensor(sensor::Sensor *s) { battery_percent_sensor_ = s; }
@@ -80,14 +79,6 @@ class Fbot : public esphome::ble_client::BLEClientNode, public Component {
   uint16_t calculate_checksum(const uint8_t *data, size_t len);
   void send_read_request();
   void parse_notification(const uint8_t *data, uint16_t length);
-};
-
-template<typename... Ts> class SetDcChargeCurrentAction : public Action<Ts...>, public Parented<Fbot> {
- public:
-  TEMPLATABLE_VALUE(uint16_t, current)
-  void play(const Ts &...x) override {
-    this->parent_->set_dc_charge_current(this->current_.value(x...));
-  }
 };
 
 } }
