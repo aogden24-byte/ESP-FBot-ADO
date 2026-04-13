@@ -1,6 +1,7 @@
 #pragma once
 
 #include "esphome/core/component.h"
+#include "esphome/core/automation.h" // Added for slider actions
 #include "esphome/components/ble_client/ble_client.h"
 #include "esphome/components/esp32_ble_tracker/esp32_ble_tracker.h"
 #include "esphome/components/sensor/sensor.h"
@@ -32,6 +33,7 @@ static const uint8_t REG_USB_CONTROL = 24;
 static const uint8_t REG_DC_CONTROL = 25;
 static const uint8_t REG_AC_CONTROL = 26;
 static const uint8_t REG_LIGHT_CONTROL = 27;
+static const uint8_t REG_DC_CHARGE_CURRENT = 40; // New: DC Current Register
 static const uint8_t REG_USB_A1_OUT = 30;
 static const uint8_t REG_USB_A2_OUT = 31;
 static const uint8_t REG_USB_C1_OUT = 34;
@@ -141,10 +143,11 @@ class Fbot : public esphome::ble_client::BLEClientNode, public Component {
   // Control methods for selects
   void control_light_mode(const std::string &value);
 
-  // Control methods for thresholds
+  // Control methods for thresholds and current
   void set_threshold_charge(float percent);
   void set_threshold_discharge(float percent);
-  
+  void set_dc_charge_current(uint16_t current); // New: DC current control method
+
   // WiFi configuration method
   void set_wifi_credentials(const std::string &ssid, const std::string &password);
 
@@ -158,7 +161,7 @@ class Fbot : public esphome::ble_client::BLEClientNode, public Component {
   
   // Timing
   uint32_t polling_interval_{2000};
-  uint32_t settings_polling_interval_{60000};  // Default: Request settings every 60 seconds
+  uint32_t settings_polling_interval_{60000};
   uint32_t last_poll_time_{0};
   uint32_t last_successful_poll_{0};
   uint32_t last_settings_request_time_{0};
@@ -171,7 +174,7 @@ class Fbot : public esphome::ble_client::BLEClientNode, public Component {
   // Polling failure tracking
   uint8_t consecutive_poll_failures_{0};
   static const uint8_t MAX_POLL_FAILURES = 3;
-  static const uint32_t POLL_TIMEOUT_MS = 5000;  // 5 seconds timeout
+  static const uint32_t POLL_TIMEOUT_MS = 5000;
   
   // Sensors
   sensor::Sensor *battery_percent_sensor_{nullptr};
@@ -240,6 +243,17 @@ class Fbot : public esphome::ble_client::BLEClientNode, public Component {
   void update_connected_state(bool state);
   void reset_sensors_to_unknown();
   void check_poll_timeout();
+};
+
+// --- THIS CLASS IS THE C++ ACTION BRIDGE ---
+template<typename... Ts> class SetDcChargeCurrentAction : public Action<Ts...>, public Parented<Fbot> {
+ public:
+  TEMPLATABLE_VALUE(uint16_t, current)
+
+  void play(Ts... x) override {
+    auto current = this->get_current_value(x...);
+    this->parent_->set_dc_charge_current(current);
+  }
 };
 
 }  // namespace fbot_dev
