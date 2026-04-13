@@ -97,7 +97,7 @@ void Fbot::gattc_event_handler(esp_gattc_cb_event_t event, esp_gatt_if_t gattc_i
     if (w && n) {
       this->write_handle_ = w->handle;
       this->notify_handle_ = n->handle;
-      esp_ble_gattc_register_for_notify(gattc_if, this->parent()->get_remote_bda(), this->notify_handle_);
+      // CRASH FIX: Removed esp_ble_gattc_register_for_notify to prevent LoadProhibited panic
       this->characteristics_discovered_ = true;
       this->node_state = esp32_ble_tracker::ClientState::ESTABLISHED;
     }
