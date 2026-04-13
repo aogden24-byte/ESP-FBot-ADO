@@ -8,7 +8,7 @@ AUTO_LOAD = ["ble_client", "sensor", "binary_sensor", "switch", "number", "selec
 DEPENDENCIES = ["ble_client"]
 MULTI_CONF = True
 
-# All required constants for sub-component files
+# Constants required for sub-component files
 CONF_FBOT_ID = "fbot_id"
 CONF_POLLING_INTERVAL = "polling_interval"
 CONF_SETTINGS_POLLING_INTERVAL = "settings_polling_interval"
